@@ -1,6 +1,6 @@
 # 🤖 RAG Chatbot - Local AI Powerhouse
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg) ![React](https://img.shields.io/badge/Frontend-React-61DAFB.svg) ![Node](https://img.shields.io/badge/Backend-Node.js-339933.svg) ![Ollama](https://img.shields.io/badge/AI-Ollama-white.svg)
+![React](https://img.shields.io/badge/Frontend-React-61DAFB.svg) ![Node](https://img.shields.io/badge/Backend-Node.js-339933.svg) ![Ollama](https://img.shields.io/badge/AI-Ollama-white.svg)
 
 A powerful, privacy-focused **Retrieval Augmented Generation (RAG)** chatbot that runs **entirely locally**.
 By leveraging **Ollama**, this application allows you to chat with your PDF documents and websites without sending data to the cloud.
@@ -131,6 +131,5 @@ RAG-chatbot/
 └── README.md
 ```
 
-## 📜 License
-This project is licensed under the MIT License.
+
 
