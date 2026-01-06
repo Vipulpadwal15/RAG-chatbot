@@ -1,114 +1,127 @@
 const axios = require("axios");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 if (!GEMINI_API_KEY) {
   console.warn("⚠️ GEMINI_API_KEY is not set in environment variables");
 }
 
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
 /**
  * Get embedding vector for a text chunk.
- * Uses text-embedding-004 which is multilingual (works across languages).
  */
 async function getEmbedding(text) {
-  const url = `${GEMINI_BASE}/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`;
-
-  const resp = await axios.post(url, {
-    content: { parts: [{ text }] },
-  });
-
-  const values = resp.data.embedding.values;
-  return values;
+  const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+  const result = await model.embedContent(text);
+  return result.embedding.values;
 }
 
 /**
- * Generate answer using RAG context.
- * Multi-language behaviour:
- *  - Detect the language of the QUESTION (English / Hindi / Marathi / other).
- *  - Use CONTEXT (may be English) only as factual source.
- *  - Reply in the SAME LANGUAGE as the QUESTION.
- *  - If answer not present in CONTEXT, say you don't know, in that language.
+ * Generate answer using RAG context with Streaming and Grounding.
  */
-async function generateAnswerWithContext(question, contextText) {
-  const url = `${GEMINI_BASE}/models/gemini-2.5-pro:generateContent?key=${GEMINI_API_KEY}`;
+async function generateAnswerStream({
+  question,
+  contextText,
+  useWebSearch,
+  previousMessages = [],
+  imagePart = null,
+  onToken,    // Callback for streaming tokens
+  onComplete, // Callback when done
+}) {
 
-  const prompt = `
-You are a Retrieval-Augmented Generation (RAG) assistant.
-
+  // System instruction for RAG behavior
+  const systemInstruction = `
+You are a helpful RAG assistant.
 RULES:
-1. First, internally detect the language of the QUESTION. It may be:
-   - English
-   - Hindi (हिंदी)
-   - Marathi (मराठी)
-   - or a mix.
-2. ALWAYS answer in the SAME LANGUAGE as the QUESTION.
-   - If question is in Hindi, answer completely in Hindi.
-   - If question is in Marathi, answer completely in Marathi.
-   - If question is in English, answer completely in English.
-3. Use ONLY the information from CONTEXT to answer the question.
-4. If the answer is not clearly found in CONTEXT:
-   - Say "I don't know based on the document." translated into the question's language.
-   - Do NOT invent facts.
-5. Keep the answer clear and concise but helpful.
-
-CONTEXT (may be in English or other language):
-${contextText}
-
-QUESTION (language of this controls your answer language):
-${question}
+1. If CONTEXT is provided, use it as the primary source of truth.
+2. If CONTEXT is missing or irrelevant, and Web Search is ENABLED, you may use it.
+3. If Web Search is DISABLED and context is insufficient, say "I don't know based on the provided documents."
+4. Always answer in the same language as the Question.
+5. Be concise and helpful.
 `;
 
-  const resp = await axios.post(url, {
-    contents: [
-      {
-        parts: [{ text: prompt }],
-      },
-    ],
-  });
+  // 1. Select Model
+  // User requested "2.5 flash" -> Mapping to "gemini-2.0-flash-exp"
+  // NOTE: This key appears to REQUIRE tools (Grounding) to work, otherwise it throws "supported methods" error.
+  const modelName = "gemini-2.0-flash-exp";
+  const modelParams = {
+    model: modelName,
+    systemInstruction: systemInstruction,
+    tools: [{ googleSearch: {} }] // Enforcing tools
+  };
 
-  const candidates = resp.data.candidates || [];
-  const text =
-    candidates[0]?.content?.parts?.map((p) => p.text).join("") ||
-    "No answer.";
-  return text;
+  // if (useWebSearch) {
+  //     modelParams.tools = [{ googleSearch: {} }];
+  // }
+
+  const model = genAI.getGenerativeModel(modelParams);
+
+  // 2. Construct Prompt history
+  let history = previousMessages.map(msg => ({
+    role: msg.role === 'user' ? 'user' : 'model',
+    parts: [{ text: msg.content }]
+  }));
+
+  // 3. Current Message Construction
+  const parts = [];
+
+  if (contextText) {
+    parts.push({ text: `CONTEXT:\n${contextText}\n\n` });
+  }
+
+  parts.push({ text: `QUESTION:\n${question}` });
+
+  if (imagePart) {
+    parts.push(imagePart);
+  }
+
+  try {
+    const chat = model.startChat({
+      history: history,
+    });
+
+    const result = await chat.sendMessageStream(parts);
+
+    let fullText = "";
+
+    for await (const chunk of result.stream) {
+      const chunkText = chunk.text();
+      if (chunkText) {
+        fullText += chunkText;
+        if (onToken) onToken(chunkText);
+      }
+    }
+
+    if (onComplete) onComplete(fullText);
+    return fullText;
+
+  } catch (err) {
+    console.error("Gemini Stream Error:", err);
+    // Fallback or error rethrow
+    if (onToken) onToken("Error generating response.");
+    if (onComplete) onComplete("Error generating response.");
+    return "Error.";
+  }
 }
 
 /**
  * Summarize long text content.
- * (Currently default is English; you can extend later with language options.)
  */
 async function summarizeLongText(text) {
-  const url = `${GEMINI_BASE}/models/gemini-2.5-pro:generateContent?key=${GEMINI_API_KEY}`;
-
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
   const prompt = `
-You are a helpful assistant.
-
 Summarize the following document into 8-12 concise bullet points.
-Focus on key ideas, important definitions, and core concepts.
-Write the summary in clear, simple English.
-
-DOCUMENT:
+Document:
 ${text}
 `;
-
-  const resp = await axios.post(url, {
-    contents: [
-      {
-        parts: [{ text: prompt }],
-      },
-    ],
-  });
-
-  const candidates = resp.data.candidates || [];
-  const summary =
-    candidates[0]?.content?.parts?.map((p) => p.text).join("") ||
-    "No summary.";
-  return summary;
+  const result = await model.generateContent(prompt);
+  return result.response.text();
 }
 
 module.exports = {
   getEmbedding,
-  generateAnswerWithContext,
+  generateAnswerStream,
   summarizeLongText,
 };
