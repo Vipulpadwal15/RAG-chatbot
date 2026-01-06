@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
-import { Terminal, FileText, PieChart } from "lucide-react";
+import { Terminal, FileText, PieChart, Target, ListTodo, CircleHelp } from "lucide-react";
 
 // Helper for stream reading
 const readStream = async (reader, onChunk) => {
@@ -23,21 +23,40 @@ const ToolsPanel = ({ documentId }) => {
     }
 
     setLoading(true);
-    setOutput(`Running ${title}...`);
+    // Immediate feedback
+    setOutput(`--- ${title} ---\nInitializing request...`);
 
     try {
       if (mode === 'summarize') {
-        // Use dedicated endpoint
+        setOutput(`--- ${title} ---\nReading document and generating summary (this may take a few seconds)...`);
+
         const res = await axios.post("http://localhost:5000/api/rag/summarize", {
           documentId
         });
         setOutput(`--- ${title} ---\n${res.data.summary}`);
       } else {
-        // Use Chat Endpoint for extraction/analysis
-        // We use a specific session ID for tools to not pollute main chat
-        const prompt = mode === 'extract'
-          ? "Extract the key information, dates, and important entities from this document as a concise bulleted list."
-          : "Analyze the sentiment of this document. Categorize it as Positive, Negative, or Neutral and explain your reasoning based on the text.";
+        let prompt = "";
+        switch (mode) {
+          case 'extract':
+            prompt = "Extract the key information, dates, and important entities from this document as a concise bulleted list.";
+            break;
+          case 'sentiment':
+            prompt = "Analyze the sentiment of this document. Categorize it as Positive, Negative, or Neutral and explain your reasoning based on the text.";
+            break;
+          case 'swot':
+            prompt = "Conduct a comprehensive SWOT analysis (Strengths, Weaknesses, Opportunities, Threats) based on the content of this document. Format it clearly.";
+            break;
+          case 'action_plan':
+            prompt = "Create a step-by-step tactical action plan or checklist based on the conclusions and recommendations in this document.";
+            break;
+          case 'quiz':
+            prompt = "Generate 5 multiple-choice questions (with answers explaining why) to test a user's understanding of this document.";
+            break;
+          default:
+            prompt = "Analyze this document.";
+        }
+
+        setOutput(`--- ${title} ---\nSending request to AI...`);
 
         const response = await fetch("http://localhost:5000/api/rag/chat", {
           method: "POST",
@@ -50,10 +69,11 @@ const ToolsPanel = ({ documentId }) => {
           }),
         });
 
+        // Feedback before first chunk
+        setOutput(`--- ${title} ---\nAI is thinking... (Receiving stream)`);
+
         const reader = response.body.getReader();
         let accumulatedText = "";
-
-        setOutput(`--- ${title} ---\n`);
 
         await readStream(reader, (chunk) => {
           accumulatedText += chunk;
@@ -62,7 +82,7 @@ const ToolsPanel = ({ documentId }) => {
       }
     } catch (err) {
       console.error(err);
-      setOutput(`Error running ${title}.`);
+      setOutput(`Error running ${title}.\nDetails: ${err.message || "Server error"}`);
     } finally {
       setLoading(false);
     }
@@ -103,10 +123,51 @@ const ToolsPanel = ({ documentId }) => {
         </div>
       </div>
 
+      <div className="tool-group">
+        <div className="section-label">Advanced</div>
+
+        <div className="tool-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button
+            className="new-chat-btn"
+            style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', justifyContent: 'flex-start' }}
+            onClick={() => runTool("swot", "SWOT Analysis")}
+            disabled={loading}
+          >
+            <Target size={14} /> SWOT Analysis
+          </button>
+
+          <button
+            className="new-chat-btn"
+            style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', justifyContent: 'flex-start' }}
+            onClick={() => runTool("action_plan", "Action Plan")}
+            disabled={loading}
+          >
+            <ListTodo size={14} /> Generate Action Plan
+          </button>
+
+          <button
+            className="new-chat-btn"
+            style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', justifyContent: 'flex-start' }}
+            onClick={() => runTool("quiz", "Quiz Me")}
+            disabled={loading}
+          >
+            <CircleHelp size={14} /> Quiz Me
+          </button>
+        </div>
+      </div>
+
       {output && (
         <div className="tool-group">
           <div className="section-label">Output</div>
-          <div className="tool-card" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+          <div
+            ref={(el) => {
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+              }
+            }}
+            className="tool-card"
+            style={{ maxHeight: '400px', overflowY: 'auto' }}
+          >
             <pre style={{ whiteSpace: 'pre-wrap', fontSize: '12px', color: 'var(--text-secondary)', margin: 0, fontFamily: 'JetBrains Mono', lineHeight: 1.5 }}>
               {output}
             </pre>

@@ -43,18 +43,16 @@ RULES:
 `;
 
   // 1. Select Model
-  // User requested "2.5 flash" -> Mapping to "gemini-2.0-flash-exp"
-  // NOTE: This key appears to REQUIRE tools (Grounding) to work, otherwise it throws "supported methods" error.
-  const modelName = "gemini-2.0-flash-exp";
+  // 1. Select Model
+  const modelName = "gemini-1.5-flash";
   const modelParams = {
     model: modelName,
     systemInstruction: systemInstruction,
-    tools: [{ googleSearch: {} }] // Enforcing tools
   };
 
-  // if (useWebSearch) {
-  //     modelParams.tools = [{ googleSearch: {} }];
-  // }
+  if (useWebSearch) {
+    modelParams.tools = [{ googleSearch: {} }];
+  }
 
   const model = genAI.getGenerativeModel(modelParams);
 

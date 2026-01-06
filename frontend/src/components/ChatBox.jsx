@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Image as ImageIcon, Globe, StopCircle, User, Bot } from "lucide-react";
+import { Send, Image as ImageIcon, Globe, StopCircle, User, Bot, Copy, FileText, Check } from "lucide-react";
 import axios from "axios";
 
 // Helper to read stream
@@ -13,6 +13,32 @@ const readStream = async (reader, onChunk) => {
   }
 };
 
+const CopyButton = ({ text }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      title="Copy"
+      style={{
+        position: 'absolute', top: 0, right: 0,
+        background: 'transparent', border: 'none',
+        color: copied ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+        cursor: 'pointer', padding: '4px', opacity: 0.6,
+        marginTop: '-4px'
+      }}
+    >
+      {copied ? <Check size={14} /> : <Copy size={13} />}
+    </button>
+  );
+};
+
+
 const ChatBox = ({ documentId, sessionId, setSessionId }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -24,6 +50,13 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
   const endRef = useRef(null);
   const textareaRef = useRef(null);
 
+  const starterCards = [
+    { title: "Summarize this document", prompt: "Summarize this document in 3 concise paragraphs." },
+    { title: "Extract key dates", prompt: "List all key dates and deadlines found in the text." },
+    { title: "Identify main risks", prompt: "What are the main risks or warnings mentioned?" },
+    { title: "Explain technical terms", prompt: "List and explain any technical terms used." }
+  ];
+
   // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
@@ -32,12 +65,11 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
     }
   }, [input]);
 
-  // Load history when session changes
   useEffect(() => {
     if (sessionId) {
       loadHistory(sessionId);
     } else {
-      setMessages([{ role: "model", content: "Hello! How can I help you today?" }]);
+      setMessages([]); // Empty state for new chats
       setInput("");
       setImageFile(null);
       setImagePreview(null);
@@ -70,24 +102,25 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
     }
   };
 
-  const sendMessage = async () => {
-    if ((!input.trim() && !imageFile) || loading) return;
+  const handleStarterClick = (prompt) => {
+    sendMessage(prompt);
+  };
 
-    const userMsg = { role: "user", content: input, image: imagePreview };
+  const sendMessage = async (overrideInput) => {
+    const textToSend = overrideInput || input;
+    if ((!textToSend.trim() && !imageFile) || loading) return;
+
+    const userMsg = { role: "user", content: textToSend, image: imagePreview };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
     setInput("");
-    setImagePreview(null); // Clear preview immediately from input
-    // imageFile is kept for the request logic below
+    setImagePreview(null);
 
-    // Prepare temporary bot message for streaming
     setMessages((prev) => [...prev, { role: "model", content: "" }]);
 
     try {
       let imageData = null;
-      if (imageFile) {
-        imageData = imagePreview; // Use the base64 string
-      }
+      if (imageFile) imageData = imagePreview;
 
       const response = await fetch("http://localhost:5000/api/rag/chat", {
         method: "POST",
@@ -112,15 +145,9 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
           return newMsgs;
         });
       });
-
       setImageFile(null);
-
     } catch (error) {
-      console.error("Chat error", error);
-      setMessages((prev) => [
-        ...prev,
-        { role: "model", content: "Error: Could not get response." },
-      ]);
+      setMessages((prev) => [...prev, { role: "model", content: "Error: Could not get response." }]);
     } finally {
       setLoading(false);
     }
@@ -139,73 +166,91 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
 
   return (
     <div className="chat-container-wrapper">
-      <div className="chat-messages">
-        {messages.map((msg, idx) => {
-          const isUser = msg.role === "user";
-          return (
-            <div key={idx} className="message-row">
-              <div className="message-bucket">
-                <div className={`message-avatar ${isUser ? 'user' : 'ai'}`}>
-                  {isUser ? <User size={16} /> : <Bot size={16} />}
-                </div>
 
-                <div className="message-content">
-                  {msg.image && (
-                    <img
-                      src={msg.image}
-                      alt="User upload"
-                      style={{ maxWidth: '100%', borderRadius: '8px', marginBottom: '12px', maxHeight: '300px' }}
-                    />
-                  )}
-                  {isUser ? (
-                    <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
-                  ) : (
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  )}
+      {/* Messages */}
+      {messages.length === 0 ? (
+        <div className="empty-state-container">
+          <div className="empty-state-header">
+            <h2>Good {new Date().getHours() < 12 ? 'Morning' : 'Afternoon'}</h2>
+            <p>Ready to analyze your knowledge base.</p>
+          </div>
+          <div className="starter-cards-grid">
+            {starterCards.map((card, idx) => (
+              <div key={idx} className="starter-card" onClick={() => handleStarterClick(card.prompt)}>
+                <h4>{card.title}</h4>
+                <span>{card.prompt}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="chat-messages">
+          {messages.map((msg, idx) => {
+            const isUser = msg.role === "user";
+            return (
+              <div key={idx} className="message-row">
+                <div className="message-bucket">
+                  <div className={`message-avatar ${isUser ? 'user' : 'ai'}`}>
+                    {isUser ? <User size={16} /> : <Bot size={16} />}
+                  </div>
+
+                  <div className="message-content" style={{ position: 'relative' }}>
+                    {!isUser && <CopyButton text={msg.content} />}
+                    {msg.image && (
+                      <img src={msg.image} alt="User upload" style={{ maxWidth: '100%', borderRadius: '8px', marginBottom: '12', maxHeight: '300px' }} />
+                    )}
+                    {isUser ? (
+                      <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                    ) : (
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {loading && messages[messages.length - 1]?.role === "user" && (
+            <div className="message-row">
+              <div className="message-bucket">
+                <div className="message-avatar ai"><Bot size={16} /></div>
+                <div className="typing-pulse">
+                  <div className="typing-dot"></div>
+                  <div className="typing-dot"></div>
+                  <div className="typing-dot"></div>
                 </div>
               </div>
             </div>
-          );
-        })}
-        {loading && messages[messages.length - 1]?.role === "user" && (
-          <div className="message-row">
-            <div className="message-bucket">
-              <div className="message-avatar ai"><Bot size={16} /></div>
-              <div className="message-content typing-indicator">Thinking...</div>
-            </div>
-          </div>
-        )}
-        <div ref={endRef} />
-      </div>
+          )}
+          <div ref={endRef} />
+        </div>
+      )}
 
+      {/* Input */}
       <div className="chat-input-area">
         <div className="input-container">
-          {/* Top Controls: Active Search / Image Preview */}
-          {(useWebSearch || imagePreview) && (
-            <div className="input-top-controls">
-              {useWebSearch && (
-                <div className="preview-chip">
-                  <Globe size={12} /> Web Active
-                </div>
-              )}
-              {imagePreview && (
-                <div className="preview-chip">
-                  <ImageIcon size={12} /> Image Attached
-                  <button
-                    onClick={() => { setImageFile(null); setImagePreview(null); }}
-                    style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 4 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
+          {/* Top Controls: Context + Chips */}
+          <div className="input-top-controls" style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px', marginBottom: '4px' }}>
+            <div className="preview-chip" style={{ background: 'transparent', paddingLeft: 0, color: 'var(--accent-primary)' }}>
+              <FileText size={12} />
+              Using: {documentId ? "Specific Document" : "All Documents"}
             </div>
-          )}
+            {useWebSearch && (
+              <div className="preview-chip">
+                <Globe size={12} /> Web Search
+              </div>
+            )}
+            {imagePreview && (
+              <div className="preview-chip">
+                <ImageIcon size={12} /> Image Attached
+                <button onClick={() => { setImageFile(null); setImagePreview(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', marginLeft: 4 }}>×</button>
+              </div>
+            )}
+          </div>
 
           <textarea
             ref={textareaRef}
             className="chat-text-input"
-            placeholder="Message..."
+            placeholder="Ask anything..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -215,36 +260,11 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
 
           <div className="input-actions">
             <div className="actions-left">
-              <button
-                className="action-btn"
-                title="Upload Image"
-                onClick={() => document.getElementById('chat-img-upload').click()}
-              >
-                <ImageIcon size={18} />
-              </button>
-              <input
-                id="chat-img-upload"
-                type="file"
-                accept="image/*"
-                onChange={handleImageChange}
-                hidden
-              />
-
-              <button
-                className={`action-btn ${useWebSearch ? 'active' : ''}`}
-                title="Toggle Web Search"
-                onClick={() => setUseWebSearch(!useWebSearch)}
-                style={{ color: useWebSearch ? 'var(--accent-primary)' : '' }}
-              >
-                <Globe size={18} />
-              </button>
+              <button className="action-btn" onClick={() => document.getElementById('chat-img-upload').click()}><ImageIcon size={18} /></button>
+              <input id="chat-img-upload" type="file" accept="image/*" onChange={handleImageChange} hidden />
+              <button className={`action-btn`} onClick={() => setUseWebSearch(!useWebSearch)} style={{ color: useWebSearch ? 'var(--accent-primary)' : '' }}><Globe size={18} /></button>
             </div>
-
-            <button
-              className="send-btn"
-              onClick={sendMessage}
-              disabled={(!input.trim() && !imageFile) || loading}
-            >
+            <button className="send-btn" onClick={() => sendMessage()} disabled={(!input.trim() && !imageFile) || loading}>
               {loading ? <StopCircle size={16} /> : <Send size={16} />}
             </button>
           </div>
