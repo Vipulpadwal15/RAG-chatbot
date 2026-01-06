@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Image as ImageIcon, Globe, StopCircle, User, Bot, Copy, FileText, Check } from "lucide-react";
+import { Send, Upload, StopCircle, User, Bot, Copy, FileText, Check } from "lucide-react";
 import axios from "axios";
 
 // Helper to read stream
@@ -39,13 +39,11 @@ const CopyButton = ({ text }) => {
 };
 
 
-const ChatBox = ({ documentId, sessionId, setSessionId }) => {
+const ChatBox = ({ documentId, sessionId, setSessionId, onDocumentUpload }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [useWebSearch, setUseWebSearch] = useState(false);
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   const endRef = useRef(null);
   const textareaRef = useRef(null);
@@ -71,8 +69,6 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
     } else {
       setMessages([]); // Empty state for new chats
       setInput("");
-      setImageFile(null);
-      setImagePreview(null);
     }
   }, [sessionId]);
 
@@ -90,15 +86,28 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
     }
   };
 
-  const handleImageChange = (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    setUploading(true);
+    try {
+      const res = await axios.post("http://localhost:5000/api/rag/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      // Notify parent
+      if (onDocumentUpload) {
+        onDocumentUpload(res.data.documentId);
+      }
+      alert("Document uploaded successfully!");
+    } catch (err) {
+      console.error(err);
+      alert("Upload failed.");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -108,29 +117,30 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
 
   const sendMessage = async (overrideInput) => {
     const textToSend = overrideInput || input;
-    if ((!textToSend.trim() && !imageFile) || loading) return;
+    if (!textToSend.trim() || loading) return;
 
-    const userMsg = { role: "user", content: textToSend, image: imagePreview };
+    const userMsg = { role: "user", content: textToSend };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
     setInput("");
-    setImagePreview(null);
 
     setMessages((prev) => [...prev, { role: "model", content: "" }]);
 
-    try {
-      let imageData = null;
-      if (imageFile) imageData = imagePreview;
+    // Generate session ID if new
+    let activeSessionId = sessionId;
+    if (!activeSessionId) {
+      activeSessionId = `sess_${Date.now()}`;
+      setSessionId(activeSessionId);
+    }
 
+    try {
       const response = await fetch("http://localhost:5000/api/rag/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: userMsg.content,
           documentId,
-          sessionId,
-          useWebSearch,
-          imageData
+          sessionId: activeSessionId
         }),
       });
 
@@ -145,7 +155,6 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
           return newMsgs;
         });
       });
-      setImageFile(null);
     } catch (error) {
       setMessages((prev) => [...prev, { role: "model", content: "Error: Could not get response." }]);
     } finally {
@@ -196,9 +205,6 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
 
                   <div className="message-content" style={{ position: 'relative' }}>
                     {!isUser && <CopyButton text={msg.content} />}
-                    {msg.image && (
-                      <img src={msg.image} alt="User upload" style={{ maxWidth: '100%', borderRadius: '8px', marginBottom: '12', maxHeight: '300px' }} />
-                    )}
                     {isUser ? (
                       <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
                     ) : (
@@ -234,15 +240,9 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
               <FileText size={12} />
               Using: {documentId ? "Specific Document" : "All Documents"}
             </div>
-            {useWebSearch && (
+            {uploading && (
               <div className="preview-chip">
-                <Globe size={12} /> Web Search
-              </div>
-            )}
-            {imagePreview && (
-              <div className="preview-chip">
-                <ImageIcon size={12} /> Image Attached
-                <button onClick={() => { setImageFile(null); setImagePreview(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', marginLeft: 4 }}>×</button>
+                <Upload size={12} /> Uploading...
               </div>
             )}
           </div>
@@ -260,11 +260,12 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
 
           <div className="input-actions">
             <div className="actions-left">
-              <button className="action-btn" onClick={() => document.getElementById('chat-img-upload').click()}><ImageIcon size={18} /></button>
-              <input id="chat-img-upload" type="file" accept="image/*" onChange={handleImageChange} hidden />
-              <button className={`action-btn`} onClick={() => setUseWebSearch(!useWebSearch)} style={{ color: useWebSearch ? 'var(--accent-primary)' : '' }}><Globe size={18} /></button>
+              <button className="action-btn" onClick={() => document.getElementById('chat-doc-upload').click()} title="Upload Document">
+                <Upload size={18} />
+              </button>
+              <input id="chat-doc-upload" type="file" accept=".pdf,.txt,.md" onChange={handleFileUpload} hidden />
             </div>
-            <button className="send-btn" onClick={() => sendMessage()} disabled={(!input.trim() && !imageFile) || loading}>
+            <button className="send-btn" onClick={() => sendMessage()} disabled={!input.trim() || loading || uploading}>
               {loading ? <StopCircle size={16} /> : <Send size={16} />}
             </button>
           </div>

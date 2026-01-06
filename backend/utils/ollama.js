@@ -2,13 +2,12 @@ const axios = require("axios");
 
 const OLLAMA_BASE_URL = "http://localhost:11434/api";
 
-// Validated models
+// Models
 const CHAT_MODEL = "llama3";
 const EMBED_MODEL = "nomic-embed-text";
 
 /**
  * Get embedding vector for a text chunk using Ollama.
- * Uses 'nomic-embed-text' model.
  */
 async function getEmbedding(text) {
     try {
@@ -25,7 +24,7 @@ async function getEmbedding(text) {
 
 /**
  * Generate answer using RAG context with Streaming from Ollama.
- * Uses 'llama3' model.
+ * Pure text-based RAG.
  */
 async function generateAnswerStream({
     question,
@@ -34,6 +33,8 @@ async function generateAnswerStream({
     onToken,
     onComplete,
 }) {
+    console.log(`[Ollama] Generating answer for: "${question}"`);
+
     const systemPrompt = `
 You are a helpful RAG assistant.
 RULES:
@@ -43,17 +44,17 @@ RULES:
 `;
 
     // Construct prompt history
-    // Ollama expects "messages" array in chat endpoint
     let messages = [
         { role: "system", content: systemPrompt }
     ];
 
-    // Add history
     previousMessages.forEach(msg => {
-        messages.push({ role: msg.role, content: msg.content });
+        // Filter out any messages with null content or image fields just in case
+        if (msg.content) {
+            messages.push({ role: msg.role, content: msg.content });
+        }
     });
 
-    // Add current context + question
     const finalUserContent = contextText
         ? `CONTEXT:\n${contextText}\n\nQUESTION:\n${question}`
         : `QUESTION:\n${question}`;
@@ -71,10 +72,16 @@ RULES:
             });
 
             let fullText = "";
+            let buffer = "";
 
             response.data.on('data', chunk => {
-                const lines = chunk.toString().split('\n').filter(line => line.trim() !== '');
+                buffer += chunk.toString();
+
+                let lines = buffer.split('\n');
+                buffer = lines.pop(); // Keep partial line
+
                 for (const line of lines) {
+                    if (line.trim() === '') continue;
                     try {
                         const json = JSON.parse(line);
                         if (json.message && json.message.content) {
@@ -84,28 +91,35 @@ RULES:
                         }
                         if (json.done) {
                             if (onComplete) onComplete(fullText);
-                            // Don't resolve here, wait for stream end
                         }
-                    } catch (e) {
-                        // Ignore parse errors for partial chunks
-                    }
+                    } catch (e) { }
                 }
             });
 
             response.data.on('end', () => {
+                if (buffer.trim()) {
+                    try {
+                        const json = JSON.parse(buffer);
+                        if (json.message && json.message.content && onToken) {
+                            onToken(json.message.content);
+                        }
+                    } catch (e) { }
+                }
+                console.log("[Ollama] Stream finished.");
                 resolve(fullText);
             });
 
             response.data.on('error', (err) => {
+                console.error("[Ollama] Stream error:", err);
                 reject(err);
             });
 
         } catch (error) {
             console.error("Error connecting to Ollama:", error.message);
-            const errMsg = "Error connecting to local AI. Is Ollama running?";
+            const errMsg = "Error connecting to local AI. Is Ollama running? (Run 'ollama serve')";
             if (onToken) onToken(errMsg);
             if (onComplete) onComplete(errMsg);
-            resolve(errMsg); // Resolve with error message so we don't crash DB save
+            resolve(errMsg);
         }
     });
 }

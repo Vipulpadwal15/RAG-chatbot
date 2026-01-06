@@ -90,8 +90,8 @@ npm start
 ## 🎮 Usage Guide
 
 1.  **Add Knowledge:**
-    *   Upload a **PDF** or ingest a **Website URL**.
-    *   The system creates "Context Pillars" automatically.
+    *   Click the **Upload Document** button (Attachment icon) in the chat bar.
+    *   Select any **PDF** file. The system will process it locally.
 2.  **Analyze:**
     *   Select a document.
     *   Use the **Tools Panel** on the right to run a *SWOT Analysis* or *Summarize* the text.

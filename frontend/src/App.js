@@ -62,6 +62,7 @@ const App = () => {
               documentId={effectiveDocId}
               sessionId={currentSessionId}
               setSessionId={setCurrentSessionId}
+              onDocumentUpload={handleUploaded}
             />
           </div>
 

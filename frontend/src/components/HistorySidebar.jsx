@@ -48,7 +48,7 @@ const HistorySidebar = ({ currentSessionId, onSelectSession, onNewChat }) => {
 
             <div className="history-list">
                 {sessions.map((sess) => {
-                    const firstMsg = (sess.messages || []).find(m => m.role === 'user')?.content || "New Conversation";
+                    const firstMsg = sess.title || "New Conversation";
                     const isActive = sess.sessionId === currentSessionId;
 
                     return (

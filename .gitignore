@@ -27,4 +27,8 @@ yarn-error.log*
 backend/.env
 frontend/.env
 .gemini/
+debug.txt
+debug_trace.log
+backend/debug.txt
+backend/debug_trace.log
 

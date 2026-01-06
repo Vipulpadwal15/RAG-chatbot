@@ -2,6 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
 const axios = require("axios");
+const fs = require("fs");
 
 const Document = require("../models/Document");
 const Chunk = require("../models/Chunk");
@@ -102,38 +103,33 @@ router.post("/ingest/url", async (req, res) => {
   }
 });
 
-// =================== 🤖 STREAMING Chat (Enhanced) ===================
+// =================== 🤖 STREAMING Chat ===================
 router.post("/chat", async (req, res) => {
+  const logFile = "C:\\Users\\Vipul\\.gemini\\antigravity\\brain\\479781bb-8a27-496f-ba0d-c14560d8a161\\debug.txt";
+  const log = (msg) => { try { fs.appendFileSync(logFile, msg + "\n"); } catch (e) { console.error(e); } };
+  log(`--> /chat request START CWD: ${process.cwd()}`);
   try {
     const {
       question,
       documentId,
-      sessionId,       // NEW
-      useWebSearch,    // NEW
-      imageData        // NEW (base64)
+      sessionId
     } = req.body;
 
-    // Use a custom event style on the frontend or just chunks
-
-    // 1. Setup Response Headers for Streaming
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Transfer-Encoding", "chunked");
-
-    if (!question && !imageData) {
-      res.write("Error: Enter a question or image");
+    if (!question) {
+      res.write("Error: Enter a question");
       return res.end();
     }
 
+    // Set headers
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+
     let context = "";
 
-    // 2. Retrieve Context if Document ID is present (and no web search override logic needed mostly)
+    // 1. Retrieve Context
     if (documentId) {
-      // If we have an image, we might skip doc context or combine it. 
-      // For now, let's just get chunks if text is present.
-      const filter = { document: documentId };
-      const chunks = await Chunk.find(filter);
-
-      if (chunks.length > 0 && question) {
+      const chunks = await Chunk.find({ document: documentId });
+      if (chunks.length > 0) {
+        // Simple search
         const qEmbed = await getEmbedding(question);
         const sorted = chunks
           .map(c => ({ ...c._doc, score: cosineSim(qEmbed, c.embedding) }))
@@ -143,56 +139,51 @@ router.post("/chat", async (req, res) => {
       }
     }
 
-    // 3. Load or Create Session
-    let session;
+    // 2. Load History
+    let messages = [];
     if (sessionId) {
-      session = await ChatSession.findOne({ sessionId });
-    }
-    if (!session) {
-      session = new ChatSession({
-        sessionId: sessionId || `sess_${Date.now()}`,
-        title: question ? question.substring(0, 30) : "New Chat"
-      });
+      const session = await ChatSession.findOne({ sessionId });
+      if (session) messages = session.messages.slice(-6);
     }
 
-    // 4. Prepare Image Part if exists
-    let imagePart = null;
-    if (imageData) {
-      // expect imageData to be "data:image/png;base64,..."
-      // Gemini expects base64 without prefix usually in part
-      const base64Data = imageData.split(",")[1];
-      const mimeType = imageData.split(";")[0].split(":")[1];
-      imagePart = {
-        inlineData: {
-          data: base64Data,
-          mimeType: mimeType
-        }
-      };
-    }
-
-    // 5. Call Gemini Wrapper
+    // 3. Call Ollama
+    console.log("Calling generateAnswerStream...");
     const finalText = await generateAnswerStream({
-      question: question || "Describe this image",
+      question,
       contextText: context,
-      useWebSearch: !!useWebSearch,
-      previousMessages: session.messages.slice(-6), // last 6 messages
-      imagePart: imagePart,
+      previousMessages: messages,
       onToken: (token) => {
-        res.write(token); // Stream
+        // Safeguard write
+        if (!res.writableEnded) res.write(token);
       }
     });
 
-    // 6. Save to DB (after stream is done)
-    session.messages.push({ role: 'user', content: question || "[Image Upload]" });
-    session.messages.push({ role: 'model', content: finalText });
-    await session.save();
+    // 4. Save to DB
+    if (sessionId) {
+      let session = await ChatSession.findOne({ sessionId });
+      if (!session) {
+        session = new ChatSession({
+          sessionId,
+          title: question ? question.substring(0, 30) : "Chat"
+        });
+      }
+      session.messages.push({ role: 'user', content: question });
+      session.messages.push({ role: 'model', content: finalText });
+      // Update title if it's the default
+      if (session.title === "New Chat" || session.title === "New Session") {
+        session.title = question.substring(0, 50) + (question.length > 50 ? "..." : "");
+      }
+      await session.save();
+    }
 
-    res.end(); // Close stream
+    res.end();
 
   } catch (err) {
-    console.error(err);
-    if (!res.headersSent) res.status(500).json({ error: "Chat failed" });
-    else res.end("\n[Error generating response]");
+    const logFile = "C:\\Users\\Vipul\\.gemini\\antigravity\\brain\\479781bb-8a27-496f-ba0d-c14560d8a161\\debug.txt";
+    try { fs.appendFileSync(logFile, "FAIL: " + err.stack + "\n"); } catch (e) { }
+    console.error("CHAT ERROR:", err);
+    if (!res.headersSent) res.status(500).json({ error: "Server Error: " + err.message });
+    else res.end("\n[ERROR DETAILS: " + err.stack + "]");
   }
 });
 
@@ -208,18 +199,8 @@ router.get("/history/:sessionId", async (req, res) => {
 });
 
 router.delete("/history/:sessionId", async (req, res) => {
-  try {
-    console.log("DELETE Request for session:", req.params.sessionId);
-    const result = await ChatSession.findOneAndDelete({ sessionId: req.params.sessionId });
-    console.log("Delete result:", result);
-    if (!result) {
-      return res.status(404).json({ error: "Session not found" });
-    }
-    res.json({ message: "Deleted" });
-  } catch (err) {
-    console.error("Delete error:", err);
-    res.status(500).json({ error: "Delete failed" });
-  }
+  await ChatSession.findOneAndDelete({ sessionId: req.params.sessionId });
+  res.json({ message: "Deleted" });
 });
 
 // =================== Summary ===================
@@ -240,13 +221,11 @@ router.get("/documents", async (req, res) => {
   res.json(docs);
 });
 
-// =================== Rename / Tags ===================
 router.patch("/document/:id", async (req, res) => {
   const doc = await Document.findByIdAndUpdate(req.params.id, req.body, { new: true });
   res.json(doc);
 });
 
-// =================== Delete ===================
 router.delete("/document/:id", async (req, res) => {
   await Chunk.deleteMany({ document: req.params.id });
   await Document.findByIdAndDelete(req.params.id);
