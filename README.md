@@ -1,108 +1,136 @@
-📄 RAG Chatbot – Multi-Language AI PDF + Website Chat Assistant
+# 🤖 RAG Chatbot - Local AI Powerhouse
 
-A full-stack MERN + Gemini-powered Retrieval Augmented Generation chatbot that allows users to upload PDFs or ingest Websites and ask questions in English, Hindi, or Marathi — and the bot replies in the same language, using your documents as knowledge.
+![License](https://img.shields.io/badge/license-MIT-blue.svg) ![React](https://img.shields.io/badge/Frontend-React-61DAFB.svg) ![Node](https://img.shields.io/badge/Backend-Node.js-339933.svg) ![Ollama](https://img.shields.io/badge/AI-Ollama-white.svg)
 
-No hallucination — answers come only from your uploaded sources.
+A powerful, privacy-focused **Retrieval Augmented Generation (RAG)** chatbot that runs **entirely locally**.
+By leveraging **Ollama**, this application allows you to chat with your PDF documents and websites without sending data to the cloud.
 
-🚀 Features
-Feature	Status
-PDF Upload + Chunk Embedding	✔
-Website URL Ingestion (text extraction)	✔
-Multi-Language Chat (Hindi/Marathi/English)	✔
-Chat across all documents	✔
-Rename, Delete, Tag Documents	✔
-AI Summary + Tools Panel	✔
-Real Vector-based RAG Search	✔
-Response based purely on context (no hallucination)	✔
-🧠 Multi-Language RAG
+---
 
-You can ask in:
+## 🚀 Features
 
-English → "What is supervised learning?"
-Hindi   → "इस PDF में supervised learning क्या है?"
-Marathi → "या PDF मध्ये supervised learning म्हणजे काय?"
+### 🔒 100% Local Intelligence
+- **No Cloud APIs:** Powered by `llama3` and `nomic-embed-text` running on your machine via Ollama.
+- **Privacy First:** Your documents never leave your local network.
 
+### 🧠 Advanced RAG Capabilities
+- **PDF Ingestion:** Upload and chat with multiple PDFs simultaneously.
+- **Web Scraping:** Ingest website URLs and extract knowledge.
+- **Context-Aware:** Responses are grounded strictly in your provided documents (Zero Hallucinations).
+- **Multi-Language:** Supports English, Hindi, and Marathi query/response.
 
-And AI will answer in the same language, pulling facts only from your documents.
+### ✨ Modern UI/UX
+- **Glassmorphism Design:** A sleek, premium dark-mode interface.
+- **Chat History:** Save, resume, and delete chat sessions.
+- **Tools Panel:**
+    - **Summarizer:** Auto-generate summaries of uploaded docs.
+    - **Similarity Check:** See exactly which document chunks matched your query.
+- **Streaming Responses:** Real-time AI typing effect.
 
-🛠 Tech Stack
-Frontend
+---
 
-React + Vite
+## 🛠 Tech Stack
 
-Axios API Service
+| Component | Technology | Description |
+| :--- | :--- | :--- |
+| **Frontend** | React + Vite | Fast, responsive UI with CSS Cards/Glass effects. |
+| **Backend** | Node.js + Express | REST API for chat, upload, and history management. |
+| **Database** | MongoDB | Stores vector embeddings, chat history, and metadata. |
+| **AI Engine** | Ollama | Runs local LLMs (`llama3`) and Embedding models. |
+| **Vector Search** | Cosine Similarity | Custom implementation for ranking document chunks. |
 
-Dark UI Minimal Layout
+---
 
-Backend
+## ⚙️ Prerequisites
 
-Node.js + Express
+Before you begin, ensure you have the following installed:
 
-Gemini API → Embeddings + Chat Completion
+1.  **Node.js**: [Download Here](https://nodejs.org/)
+2.  **MongoDB**: [Download Community Server](https://www.mongodb.com/try/download/community)
+3.  **Ollama**: [Download Here](https://ollama.com/)
 
-Cosine Similarity Ranking
+---
 
-pdf-parse for file decoding
+## 📦 Installation & Setup
 
-axios for website scraping
+### 1. Prepare AI Models
+Open your terminal and pull the required Ollama models:
+```bash
+ollama pull llama3
+ollama pull nomic-embed-text
+```
 
-Database
+### 2. Clone Repository
+```bash
+git clone https://github.com/Vipulpadwal15/RAG-chatbot.git
+cd RAG-chatbot
+```
 
-MongoDB + Mongoose
-Stores documents, chunks & embeddings.
-RAG-chatbot-mern/
-│── backend/
-│   ├── models/Document.js
-│   ├── models/Chunk.js
-│   ├── routes/ragRoutes.js    <-- PDF + Website ingest + Chat
-│   ├── utils/gemini.js        <-- Multi-language RAG Support
-│   ├── server.js
-│
-│── frontend/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── api.js
-│   │   ├── components/
-│   │   │   ├── DocumentUpload.jsx
-│   │   │   ├── DocumentSelector.jsx
-│   │   │   ├── ToolsPanel.jsx
-│   │   │   ├── ChatBox.jsx
-│   │   ├── App.css
-│
-├── README.md ← (You are here)
-├── .gitignore
-├── package.json
-🔧 Setup Guide
-1️⃣ Backend Setup
-bash
-Copy code
+### 3. Backend Setup
+```bash
 cd backend
 npm install
-node server.js
-Create .env inside backend/
+```
 
-env
-Copy code
+Create a `.env` file in the `backend/` directory:
+```env
 PORT=5000
-MONGO_URI=your_mongo_connection
-GEMINI_API_KEY=your_gemini_key
-2️⃣ Frontend Setup
-bash
-Copy code
+# Your MongoDB connection string
+MONGO_URI=mongodb://localhost:27017/rag_chatbot
+```
+
+Start the backend server:
+```bash
+npm start
+# Server runs on http://localhost:5000
+```
+
+### 4. Frontend Setup
+Open a new terminal window:
+```bash
 cd frontend
 npm install
-npm run dev
-Access UI:
+npm start
+# App opens at http://localhost:3000
+```
 
-👉 http://localhost:5173
+---
 
-🥇 Usage Flow
-Upload a PDF OR Enter a website URL
+## 🎮 Usage Guide
 
-The system extracts + chunks + stores embeddings
+1.  **Upload Data:**
+    *   Click the **Paperclip Icon** to upload a PDF.
+    *   Or enter a URL in the "Add Data" section to scrape a website.
+2.  **Wait for Processing:**
+    *   The system chunks and embeds your data. Wait for the success notification.
+3.  **Chat:**
+    *   Type your question in the box.
+    *   The AI will search your docs and answer based *only* on them.
+4.  **Use Tools:**
+    *   **Summarize:** Get a quick overview of the current document.
+    *   **Similarity:** Debug exactly what the AI "read" to answer you.
 
-Ask questions in any language
+---
 
-AI responds using chunks as context
+## 📁 Project Structure
 
-View, rename, delete, and manage document knowledge
+```bash
+RAG-chatbot/
+├── backend/
+│   ├── models/         # MongoDB Schemas (Chat, Chunk, Document)
+│   ├── routes/         # API Routes (history, upload, chat)
+│   ├── utils/          # AI Logic (ollama.js, vector-search)
+│   └── server.js       # Entry point
+│
+├── frontend/
+│   ├── src/
+│   │   ├── components/ # ChatBox, HistorySidebar, ToolsPanel
+│   │   ├── api.js      # Axios endpoints
+│   │   └── App.css     # Global styles
+│
+└── README.md
+```
+
+## 📜 License
+This project is licensed under the MIT License.
+
