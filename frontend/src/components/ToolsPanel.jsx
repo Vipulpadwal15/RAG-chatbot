@@ -1,108 +1,119 @@
 import React, { useState } from "react";
-import { summarizeDoc, similarityCheck } from "../api";
+import axios from "axios";
+import { Terminal, FileText, PieChart } from "lucide-react";
+
+// Helper for stream reading
+const readStream = async (reader, onChunk) => {
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    onChunk(decoder.decode(value, { stream: true }));
+  }
+};
 
 const ToolsPanel = ({ documentId }) => {
-  const [loadingSummary, setLoadingSummary] = useState(false);
-  const [loadingSim, setLoadingSim] = useState(false);
-  const [error, setError] = useState(null);
+  const [output, setOutput] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  // Re-added missing state
-  const [summary, setSummary] = useState("");
-  const [simText, setSimText] = useState("");
-  const [similarityResults, setSimilarityResults] = useState([]);
-
-  const handleSummarize = async () => {
-    setLoadingSummary(true);
-    setError(null);
-    try {
-      const res = await summarizeDoc(documentId);
-      setSummary(res.data.summary);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to generate summary.");
-    } finally {
-      setLoadingSummary(false);
+  const runTool = async (mode, title) => {
+    if (!documentId) {
+      setOutput("Please select or upload a document first.");
+      return;
     }
-  };
 
-  const handleSimilarity = async () => {
-    if (!simText.trim()) return;
-    setLoadingSim(true);
-    setError(null);
+    setLoading(true);
+    setOutput(`Running ${title}...`);
+
     try {
-      const res = await similarityCheck(simText, documentId);
-      setSimilarityResults(res.data.results || []);
+      if (mode === 'summarize') {
+        // Use dedicated endpoint
+        const res = await axios.post("http://localhost:5000/api/rag/summarize", {
+          documentId
+        });
+        setOutput(`--- ${title} ---\n${res.data.summary}`);
+      } else {
+        // Use Chat Endpoint for extraction/analysis
+        // We use a specific session ID for tools to not pollute main chat
+        const prompt = mode === 'extract'
+          ? "Extract the key information, dates, and important entities from this document as a concise bulleted list."
+          : "Analyze the sentiment of this document. Categorize it as Positive, Negative, or Neutral and explain your reasoning based on the text.";
+
+        const response = await fetch("http://localhost:5000/api/rag/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question: prompt,
+            documentId,
+            sessionId: "tools-analysis-session",
+            useWebSearch: false
+          }),
+        });
+
+        const reader = response.body.getReader();
+        let accumulatedText = "";
+
+        setOutput(`--- ${title} ---\n`);
+
+        await readStream(reader, (chunk) => {
+          accumulatedText += chunk;
+          setOutput(`--- ${title} ---\n${accumulatedText}`);
+        });
+      }
     } catch (err) {
       console.error(err);
-      setError("Failed to check similarity.");
+      setOutput(`Error running ${title}.`);
     } finally {
-      setLoadingSim(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="card">
-      <h3 style={{ marginBottom: "15px" }}>🛠 Tools</h3>
+    <>
+      <div className="tool-group">
+        <div className="section-label">Analysis Tools</div>
 
-      {/* Summary Section */}
-      <div style={{ marginBottom: "20px" }}>
-        <button
-          onClick={handleSummarize}
-          disabled={loadingSummary}
-          className="tool-btn"
-        >
-          {loadingSummary ? "Generating..." : "📄 Summarize Document"}
-        </button>
+        <div className="tool-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button
+            className="new-chat-btn"
+            style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', justifyContent: 'flex-start' }}
+            onClick={() => runTool("summarize", "Summary")}
+            disabled={loading}
+          >
+            <FileText size={14} /> Summarize Doc
+          </button>
 
-        {summary && (
-          <div className="tool-output">
-            <h4>Summary</h4>
-            <div className="scroll-box">
-              {summary}
-            </div>
-          </div>
-        )}
+          <button
+            className="new-chat-btn"
+            style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', justifyContent: 'flex-start' }}
+            onClick={() => runTool("extract", "Key Info")}
+            disabled={loading}
+          >
+            <Terminal size={14} /> Extract Key Info
+          </button>
+
+          <button
+            className="new-chat-btn"
+            style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', justifyContent: 'flex-start' }}
+            onClick={() => runTool("sentiment", "Sentiment")}
+            disabled={loading}
+          >
+            <PieChart size={14} /> Sentiment Analysis
+          </button>
+        </div>
       </div>
 
-      <hr className="divider" />
-
-      {/* Similarity Section */}
-      <div>
-        <h4 style={{ marginBottom: "8px" }}>Plagiarism / Similarity</h4>
-        <textarea
-          rows={3}
-          className="tool-input"
-          placeholder="Paste text to check..."
-          value={simText}
-          onChange={(e) => setSimText(e.target.value)}
-        />
-        <button
-          onClick={handleSimilarity}
-          disabled={loadingSim}
-          className="tool-btn"
-        >
-          {loadingSim ? "Checking..." : "🔍 Check Similarity"}
-        </button>
-
-        {similarityResults.length > 0 && (
-          <div className="tool-output">
-            <h4>Matches Found:</h4>
-            <div className="scroll-box">
-              {similarityResults.map((r, i) => (
-                <div key={i} className="sim-item">
-                  <div className="sim-header">
-                    <strong>#{i + 1}</strong> <span>{(r.similarity * 100).toFixed(1)}% match</span>
-                  </div>
-                  <p>{r.chunk}</p>
-                </div>
-              ))}
-            </div>
+      {output && (
+        <div className="tool-group">
+          <div className="section-label">Output</div>
+          <div className="tool-card" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            <pre style={{ whiteSpace: 'pre-wrap', fontSize: '12px', color: 'var(--text-secondary)', margin: 0, fontFamily: 'JetBrains Mono', lineHeight: 1.5 }}>
+              {output}
+            </pre>
           </div>
-        )}
-      </div>
-
-      {error && <div className="error-msg">{error}</div>}
-    </div>
+        </div>
+      )}
+    </>
   );
 };
 

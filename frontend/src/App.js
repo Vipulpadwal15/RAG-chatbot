@@ -30,7 +30,10 @@ const App = () => {
     <div className="app-root">
       {/* Sidebar */}
       <aside className="app-sidebar">
-        <h2 className="brand-logo">RAGBot <span>AI</span></h2>
+        <div className="sidebar-header">
+          <h2 className="brand-logo">RAGBot <span>AI</span></h2>
+        </div>
+
         <HistorySidebar
           currentSessionId={currentSessionId}
           onSelectSession={handleSelectSession}
@@ -63,9 +66,14 @@ const App = () => {
           </div>
 
           <div className="tools-section">
-            <div className="upload-container">
-              <DocumentUpload onUploaded={handleUploaded} />
+            {/* Tools Panel now includes the upload container styling internally or we wrap it here */}
+            <div className="tool-group">
+              <div className="section-label">Knowledge Base</div>
+              <div className="tool-card">
+                <DocumentUpload onUploaded={handleUploaded} />
+              </div>
             </div>
+
             <ToolsPanel documentId={effectiveDocId} />
           </div>
         </div>

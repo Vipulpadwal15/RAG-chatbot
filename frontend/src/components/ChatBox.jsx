@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import { Send, Image as ImageIcon, Globe, StopCircle, User, Bot } from "lucide-react";
 import axios from "axios";
 
 // Helper to read stream
@@ -20,6 +22,15 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
   const [imagePreview, setImagePreview] = useState(null);
 
   const endRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'inherit';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
+    }
+  }, [input]);
 
   // Load history when session changes
   useEffect(() => {
@@ -66,6 +77,8 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
     setInput("");
+    setImagePreview(null); // Clear preview immediately from input
+    // imageFile is kept for the request logic below
 
     // Prepare temporary bot message for streaming
     setMessages((prev) => [...prev, { role: "model", content: "" }]);
@@ -73,8 +86,7 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
     try {
       let imageData = null;
       if (imageFile) {
-        // Convert to base64 if not already (preview is base64)
-        imageData = imagePreview;
+        imageData = imagePreview; // Use the base64 string
       }
 
       const response = await fetch("http://localhost:5000/api/rag/chat", {
@@ -96,18 +108,12 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
         accumulatedText += chunk;
         setMessages((prev) => {
           const newMsgs = [...prev];
-          // Update last message (bot)
           newMsgs[newMsgs.length - 1].content = accumulatedText;
           return newMsgs;
         });
       });
 
-      // If this was a new session, we need to refresh or get the ID somehow. 
-      // Ideally the backend returns the ID in headers or we generate it client side.
-      // For simplicity, we refresh the session list or re-fetch history if needed.
-      // For now, let's just clear the image.
       setImageFile(null);
-      setImagePreview(null);
 
     } catch (error) {
       console.error("Chat error", error);
@@ -120,62 +126,128 @@ const ChatBox = ({ documentId, sessionId, setSessionId }) => {
     }
   };
 
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, loading]);
 
   return (
     <div className="chat-container-wrapper">
       <div className="chat-messages">
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`chat-bubble ${msg.role === "user" ? "user" : "bot"}`}>
-            {msg.image && (
-              <img src={msg.image} alt="User upload" className="msg-attachment" />
-            )}
-            <div className="msg-text">{msg.content}</div>
-          </div>
-        ))}
+        {messages.map((msg, idx) => {
+          const isUser = msg.role === "user";
+          return (
+            <div key={idx} className="message-row">
+              <div className="message-bucket">
+                <div className={`message-avatar ${isUser ? 'user' : 'ai'}`}>
+                  {isUser ? <User size={16} /> : <Bot size={16} />}
+                </div>
+
+                <div className="message-content">
+                  {msg.image && (
+                    <img
+                      src={msg.image}
+                      alt="User upload"
+                      style={{ maxWidth: '100%', borderRadius: '8px', marginBottom: '12px', maxHeight: '300px' }}
+                    />
+                  )}
+                  {isUser ? (
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                  ) : (
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
         {loading && messages[messages.length - 1]?.role === "user" && (
-          <div className="chat-bubble bot typing">Thinking...</div>
+          <div className="message-row">
+            <div className="message-bucket">
+              <div className="message-avatar ai"><Bot size={16} /></div>
+              <div className="message-content typing-indicator">Thinking...</div>
+            </div>
+          </div>
         )}
         <div ref={endRef} />
       </div>
 
       <div className="chat-input-area">
-        {imagePreview && (
-          <div className="image-preview-bar">
-            <img src={imagePreview} alt="Preview" />
-            <button onClick={() => { setImageFile(null); setImagePreview(null); }}>×</button>
-          </div>
-        )}
+        <div className="input-container">
+          {/* Top Controls: Active Search / Image Preview */}
+          {(useWebSearch || imagePreview) && (
+            <div className="input-top-controls">
+              {useWebSearch && (
+                <div className="preview-chip">
+                  <Globe size={12} /> Web Active
+                </div>
+              )}
+              {imagePreview && (
+                <div className="preview-chip">
+                  <ImageIcon size={12} /> Image Attached
+                  <button
+                    onClick={() => { setImageFile(null); setImagePreview(null); }}
+                    style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 4 }}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
-        <div className="input-controls">
-          <label className="toggle-search">
-            <input
-              type="checkbox"
-              checked={useWebSearch}
-              onChange={(e) => setUseWebSearch(e.target.checked)}
-            />
-            <span>🌐 Web Search</span>
-          </label>
-          <label className="image-upload-btn">
-            📷
-            <input type="file" accept="image/*" onChange={handleImageChange} hidden />
-          </label>
-        </div>
-
-        <div className="input-box-row">
-          <input
-            type="text"
-            placeholder="Ask something..."
+          <textarea
+            ref={textareaRef}
+            className="chat-text-input"
+            placeholder="Message..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+            onKeyDown={handleKeyDown}
             disabled={loading}
+            rows={1}
           />
-          <button onClick={sendMessage} disabled={loading}>
-            ➤
-          </button>
+
+          <div className="input-actions">
+            <div className="actions-left">
+              <button
+                className="action-btn"
+                title="Upload Image"
+                onClick={() => document.getElementById('chat-img-upload').click()}
+              >
+                <ImageIcon size={18} />
+              </button>
+              <input
+                id="chat-img-upload"
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                hidden
+              />
+
+              <button
+                className={`action-btn ${useWebSearch ? 'active' : ''}`}
+                title="Toggle Web Search"
+                onClick={() => setUseWebSearch(!useWebSearch)}
+                style={{ color: useWebSearch ? 'var(--accent-primary)' : '' }}
+              >
+                <Globe size={18} />
+              </button>
+            </div>
+
+            <button
+              className="send-btn"
+              onClick={sendMessage}
+              disabled={(!input.trim() && !imageFile) || loading}
+            >
+              {loading ? <StopCircle size={16} /> : <Send size={16} />}
+            </button>
+          </div>
         </div>
       </div>
     </div>
